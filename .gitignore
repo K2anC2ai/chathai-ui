@@ -1,0 +1,43 @@
+# Node modules
+node_modules/
+
+# Build output
+build/
+dist/
+out/
+release/
+
+# Electron Forge/Builder output
+*.exe
+*.dmg
+*.AppImage
+*.snap
+*.msi
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+
+# Environment files
+.env
+.env.*
+
+# Cypress output
+cypress/videos/
+cypress/screenshots/
+
+# Misc
+*.local
+*.cache
