@@ -6,7 +6,7 @@ build/
 dist/
 out/
 release/
-
+resources/
 # Electron Forge/Builder output
 *.exe
 *.dmg

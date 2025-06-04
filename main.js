@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { exec } = require('child_process');
+const fs = require('fs');
 
 function getProjectDirFromArgv() {
   // Find the first argument that looks like an absolute path and is not the exe itself
@@ -26,8 +27,9 @@ console.log('Chathai UI: outputDir =', path.join(projectDir, 'cypress', 'e2e'));
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 900,
-    height: 700,
+    width: 1200,
+    height: 720,
+    useContentSize: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -51,7 +53,7 @@ function createWindow() {
 
 app.whenReady().then(createWindow);
 
-ipcMain.handle('run-chathai', async (event, excelPath) => {
+ipcMain.handle('run-chathai', async (event, selectedPath, mode) => {
   return new Promise((resolve, reject) => {
     let chathaiCli;
     if (app.isPackaged) {
@@ -59,12 +61,50 @@ ipcMain.handle('run-chathai', async (event, excelPath) => {
     } else {
       chathaiCli = path.join(__dirname, 'resources', 'Chathai_OnDev', 'bin', 'chathai.js');
     }
-    // Use robust projectDir detection
     const projectDir = getProjectDirFromArgv();
     const outputDir = path.join(projectDir, 'cypress', 'e2e');
-    const resolvedExcelPath = path.isAbsolute(excelPath) ? excelPath : path.join(projectDir, excelPath);
+    let cliCmd;
+    if (mode === 'directory') {
+      if (!selectedPath) {
+        // No argument: use default template dir
+        cliCmd = `node "${chathaiCli}" generate --project-dir "${projectDir}" --output-dir "cypress/e2e"`;
+      } else {
+        // Use only the directory name (relative to projectDir)
+        const dirName = path.isAbsolute(selectedPath)
+          ? path.relative(projectDir, selectedPath)
+          : selectedPath;
+        cliCmd = `node "${chathaiCli}" generate "${dirName}" --project-dir "${projectDir}" --output-dir "cypress/e2e"`;
+      }
+    } else {
+      // Single file mode
+      const resolvedExcelPath = path.isAbsolute(selectedPath)
+        ? selectedPath
+        : path.join(projectDir, selectedPath);
+      cliCmd = `node "${chathaiCli}" generate "${resolvedExcelPath}" --project-dir "${projectDir}" --output-dir "cypress/e2e"`;
+    }
     exec(
-      `node "${chathaiCli}" generate "${resolvedExcelPath}" "${outputDir}" --project-dir "${projectDir}"`,
+      cliCmd,
+      { cwd: projectDir },
+      (error, stdout, stderr) => {
+        if (error) return reject(stderr || error.message);
+        resolve(stdout);
+      }
+    );
+  });
+});
+
+ipcMain.handle('setDefaultTemplateDir', async (event, templateDir) => {
+  return new Promise((resolve, reject) => {
+    let chathaiCli;
+    if (app.isPackaged) {
+      chathaiCli = path.join(process.resourcesPath, 'Chathai_OnDev', 'bin', 'chathai.js');
+    } else {
+      chathaiCli = path.join(__dirname, 'resources', 'Chathai_OnDev', 'bin', 'chathai.js');
+    }
+    const projectDir = getProjectDirFromArgv();
+    const cliCmd = `node "${chathaiCli}" --template-dir "${templateDir}"`;
+    exec(
+      cliCmd,
       { cwd: projectDir },
       (error, stdout, stderr) => {
         if (error) return reject(stderr || error.message);
@@ -80,4 +120,27 @@ ipcMain.on('open-installed-app', (event, arg) => {
       console.error('Failed to open the installed app:', err);
     }
   });
+});
+
+ipcMain.handle('getDefaultTemplateDir', async (event) => {
+  // Read config.json from the CLI packagePath
+  let chathaiCliDir;
+  if (app.isPackaged) {
+    chathaiCliDir = path.join(process.resourcesPath, 'Chathai_OnDev');
+  } else {
+    chathaiCliDir = path.join(__dirname, 'resources', 'Chathai_OnDev');
+  }
+  const configPath = path.join(chathaiCliDir, 'config.json');
+  let defaultDir = 'xlsxtemplate';
+  if (fs.existsSync(configPath)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (config.defaultTemplateDir) {
+        defaultDir = config.defaultTemplateDir;
+      }
+    } catch (e) {
+      // ignore, fallback to xlsxtemplate
+    }
+  }
+  return defaultDir;
 });
