@@ -123,14 +123,9 @@ ipcMain.on('open-installed-app', (event, arg) => {
 });
 
 ipcMain.handle('getDefaultTemplateDir', async (event) => {
-  // Read config.json from the CLI packagePath
-  let chathaiCliDir;
-  if (app.isPackaged) {
-    chathaiCliDir = path.join(process.resourcesPath, 'Chathai_OnDev');
-  } else {
-    chathaiCliDir = path.join(__dirname, 'resources', 'Chathai_OnDev');
-  }
-  const configPath = path.join(chathaiCliDir, 'config.json');
+  // Read config.json from the project directory
+  const projectDir = getProjectDirFromArgv();
+  const configPath = path.join(projectDir, '.chathai-config.json');
   let defaultDir = 'xlsxtemplate';
   if (fs.existsSync(configPath)) {
     try {
@@ -143,4 +138,35 @@ ipcMain.handle('getDefaultTemplateDir', async (event) => {
     }
   }
   return defaultDir;
+});
+
+ipcMain.handle('listTemplateFiles', async (event) => {
+  const projectDir = getProjectDirFromArgv();
+  const configPath = path.join(projectDir, '.chathai-config.json');
+  let templateDir = 'xlsxtemplate';
+  
+  if (fs.existsSync(configPath)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (config.defaultTemplateDir) {
+        templateDir = config.defaultTemplateDir;
+      }
+    } catch (e) {
+      // ignore, fallback to xlsxtemplate
+    }
+  }
+
+  const fullTemplateDir = path.join(projectDir, templateDir);
+  if (!fs.existsSync(fullTemplateDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(fullTemplateDir)
+    .filter(file => file.endsWith('.xlsx'))
+    .map(file => ({
+      name: file,
+      path: path.join(templateDir, file)
+    }));
+
+  return files;
 });
