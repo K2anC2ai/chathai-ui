@@ -1,9 +1,7 @@
 .chathai-container {
   display: flex;
-  height: 100vh; /* Full viewport height */
   font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; /* Use a common clean font */
   background-color: #f0f2f5; /* Light background for the overall page */
-  overflow: hidden; /* Prevent horizontal scrollbar when sidebar is hidden */
 }
 
 .sidebar {
@@ -68,31 +66,33 @@
   transition: margin-left 0.3s ease-in-out;
   margin-left: 0;
   min-width: 0;
-  overflow-y: auto; /* Add scrolling to main content if necessary, though console should handle it */
+  min-height: 0;
 }
 
+/* Make the white panel flexible */
 .main-content-panel {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
-  background-color: #ffffff;
+  background-color: #fff;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
   padding: 20px;
-  min-height: 0; /* Allow the panel to shrink if needed */
-  overflow: hidden; /* Hide potential overflow within the panel */
+  min-height: 0;
+  height: 100%;
+  overflow: visible;
 }
 
 .header-row {
   margin-bottom: 20px;
-  flex-shrink: 0; /* Prevent header from shrinking */
+  flex: 0 0 auto; /* Do not grow or shrink, size based on content */
 }
 
 .button-row {
   display: flex;
   gap: 15px;
   margin-bottom: 20px;
-  flex-shrink: 0; /* Prevent buttons from shrinking */
+  flex: 0 0 auto; /* Do not grow or shrink, size based on content */
 }
 
 .chathai-btn {
@@ -186,57 +186,97 @@
    flex-direction: column;
    align-items: center;
    margin-bottom: 20px;
-   padding: 40px; /* More padding */
+   padding: 12px;              /* reduce padding */
    border: 1px solid #e0e0e0;
    border-radius: 8px;
    background-color: #ffffff;
+   flex: 0 0 auto;
+   max-width: 220px;           /* reduce width */
+   min-width: 160px;           /* optional: set a min width */
+   max-height: 160px;          /* reduce height */
+   min-height: 100px;          /* optional: set a min height */
+   overflow-y: auto;
 }
 
 .file-icon {
-   font-size: 5em; /* Even larger icon */
-   margin-bottom: 20px;
-   color: #3498db; /* Use the modern blue color */
+   font-size: 2.2em;           /* smaller icon */
+   margin-bottom: 8px;
+   color: #3498db;
+}
+
+.file-detail-container h3 {
+    margin-top: 0;
+    margin-bottom: 4px;        /* less space */
+    font-size: 1em;            /* smaller font */
+}
+
+.file-detail-container p {
+    margin-top: 0;
+    margin-bottom: 8px;        /* less space */
+    font-size: 0.85em;         /* smaller font */
 }
 
 .status-indicator {
-   margin-top: 20px;
-   padding: 10px 20px; /* More padding */
-   border-radius: 20px; /* Pill shape */
+   margin-top: 8px;            /* less space */
+   padding: 4px 10px;          /* smaller badge */
+   border-radius: 12px;
    font-weight: bold;
    text-transform: uppercase;
-   font-size: 0.9em;
+   font-size: 0.7em;           /* smaller font */
 }
 
-.status-indicator.success {
-   background-color: #2ecc71; /* Modern green */
-   color: white;
-}
-
+/* Make the black console area fill available width and height */
 .console-placeholder {
-  flex-grow: 1; /* Allow console to take remaining space */
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 15px;
-  background-color: #2b2b2b;
-  color: #a9b7c6;
-  overflow-y: auto; /* Enable vertical scrolling */
-  white-space: pre-wrap;
-  font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
-  font-size: 0.9em;
-  line-height: 1.5;
-  min-height: 0; /* Crucial for allowing flex-grow to work correctly with overflow */
-  display: flex; /* Make console itself a flex container if needed for internal layout */
-  flex-direction: column; /* Stack internal content vertically */
+  border-radius: 12px;
+  padding: 36px 32px;
+  background-color: #23272e;
+  color: #e8eaf0;
+  font-family: 'Fira Mono', 'Consolas', 'Menlo', 'Monaco', monospace;
+  font-size: 1.2em;
+  line-height: 1.7;
+  flex-grow: 1;
+  min-height: 300px;
+  max-height: 100%;
+  overflow-y: auto;
+  margin-top: 32px;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
 }
 
+/* Make the white log box inside scale and scroll */
 .chathai-log {
-    margin: 0;
-    padding: 0;
-    background-color: transparent;
-    color: inherit;
-    border: none;
-    flex-grow: 1; /* Allow the log content to grow and push scrolling */
-    overflow-y: auto; /* Explicitly make the log content scrollable */
+  margin: 0 0 16px 0;
+  padding: 18px 16px;
+  background: #fff;
+  color: #222;
+  border-radius: 8px;
+  width: 100%;
+  min-height: 60px;
+  max-height: 60vh;
+  font-size: 1.18em;
+  font-family: 'Fira Mono', 'Consolas', monospace;
+  box-sizing: border-box;
+  border: 1px solid #e0e0e0;
+  overflow-y: auto;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  resize: vertical;
+  transition: max-height 0.2s;
+}
+
+/* Optional: Make the [Console Output Area] label more readable */
+.console-placeholder p {
+  color: #fff;
+  font-size: 1.3em;
+  margin-bottom: 18px;
+  font-weight: 600;
+  border-bottom: 1px solid #444;
+  padding-bottom: 10px;
+  letter-spacing: 0.5px;
 }
 
 .sidebar-toggle-btn {
@@ -262,4 +302,49 @@
 /* Add a class to adjust main content when sidebar is hidden */
 .main-content.sidebar-hidden {
     margin-left: -280px; /* Compensate for sidebar width */
-} 
+}
+
+.file-detail-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 32px;
+  margin-bottom: 24px;
+}
+
+.button-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.console-output-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 600px;
+}
+
+.console-title {
+  font-weight: bold;
+  font-size: 1.1em;
+  margin-bottom: 4px;
+  color: #222;
+}
+
+.console-textarea {
+  width: 100%;
+  min-height: 40px;
+  font-family: 'Fira Mono', 'Consolas', monospace;
+  font-size: 1em;
+  background: #f7f7f7;
+  border: 1px solid #d0d0d0;
+  border-radius: 5px;
+  padding: 8px;
+  resize: vertical;
+}

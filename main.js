@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const fs = require('fs');
 
 function getProjectDirFromArgv() {
@@ -169,4 +169,56 @@ ipcMain.handle('listTemplateFiles', async (event) => {
     }));
 
   return files;
+});
+
+ipcMain.handle('run-cypress-test', async (event, specPath) => {
+  return new Promise((resolve, reject) => {
+    // Use npx to run Cypress for the specific spec file
+    const cypress = spawn('npx', ['cypress', 'run', '--spec', specPath], {
+      cwd: projectDir, // Make sure projectDir is set correctly
+      shell: true
+    });
+
+    let output = '';
+    cypress.stdout.on('data', (data) => {
+      output += data.toString();
+      event.sender.send('cypress-log', data.toString()); // Stream log to renderer
+    });
+    cypress.stderr.on('data', (data) => {
+      output += data.toString();
+      event.sender.send('cypress-log', data.toString());
+    });
+    cypress.on('close', (code) => {
+      resolve(output + `\nProcess exited with code ${code}`);
+    });
+    cypress.on('error', (err) => {
+      reject(err.message);
+    });
+  });
+});
+
+ipcMain.handle('run-all-cypress-tests', async (event) => {
+  return new Promise((resolve, reject) => {
+    // Run all tests in cypress/e2e
+    const cypress = spawn('npx', ['cypress', 'run', '--spec', 'cypress/e2e/*.cy.js'], {
+      cwd: projectDir,
+      shell: true
+    });
+
+    let output = '';
+    cypress.stdout.on('data', (data) => {
+      output += data.toString();
+      event.sender.send('cypress-log', data.toString());
+    });
+    cypress.stderr.on('data', (data) => {
+      output += data.toString();
+      event.sender.send('cypress-log', data.toString());
+    });
+    cypress.on('close', (code) => {
+      resolve(output + `\nProcess exited with code ${code}`);
+    });
+    cypress.on('error', (err) => {
+      reject(err.message);
+    });
+  });
 });

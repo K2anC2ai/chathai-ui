@@ -45,4 +45,19 @@ module.exports = {
       [FuseV1Options.OnlyLoadAppFromAsar]: true,
     }),
   ],
+    publishers: [
+    {
+      name: '@electron-forge/publisher-github',
+      config: {
+        repository: {
+          owner: 'K2anC2ai',
+          name: 'chathai-ui'
+        },
+        prerelease: false,
+        draft: true
+      }
+    }
+  ]
+
+
 };

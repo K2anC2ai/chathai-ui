@@ -10,11 +10,18 @@ export default function GeneratePage() {
   const [currentView, setCurrentView] = useState('all'); // 'all' or 'single'
   const [selectedFile, setSelectedFile] = useState(null); // To store the selected file object
   const [isSidebarVisible, setIsSidebarVisible] = useState(true); // State to control sidebar visibility
+  const [runLog, setRunLog] = useState('');
 
   // On mount, fetch the real default template dir and template files
   useEffect(() => {
     window.chathaiAPI.getDefaultTemplateDir().then(setDefaultDir);
     window.chathaiAPI.listTemplateFiles().then(setTemplateFiles);
+  }, []);
+
+  useEffect(() => {
+    window.chathaiAPI.onCypressLog((data) => {
+      setRunLog(prev => prev + data);
+    });
   }, []);
 
   const handleGenerate = async (filePath) => {
@@ -50,9 +57,15 @@ export default function GeneratePage() {
     setIsGenerating(false);
   };
 
-  const handleRunAllTests = () => {
-    setLog('Run All Tests button clicked (functionality not yet implemented).');
-    // TODO: Implement run all tests functionality
+  const handleRunAllTests = async () => {
+    setLog('Running all Cypress tests...');
+    setRunLog('');
+    try {
+      await window.chathaiAPI.runAllCypressTests();
+      setLog('✅ All Cypress tests completed!');
+    } catch (err) {
+      setLog('❌ Error running all tests: ' + err);
+    }
   };
 
   const handleGenerateSingle = async () => {
@@ -68,11 +81,21 @@ export default function GeneratePage() {
      setIsGenerating(false);
   };
 
-   const handleRunSingleTest = () => {
+   const handleRunSingleTest = async () => {
      if (!selectedFile) return;
-     setLog(`Run Test button clicked for ${selectedFile.name} (functionality not yet implemented).`);
-     // TODO: Implement run single test functionality
-   };
+     setRunLog('');
+     setLog(`Running Cypress test for ${selectedFile.name}...`);
+     try {
+       // Compute the generated test file path
+       // Example: if selectedFile.path is 'testcase/test.xlsx', output is 'cypress/e2e/test.cy.js'
+       const excelBaseName = selectedFile.name.replace(/\.xlsx$/i, '');
+       const testFilePath = `cypress/e2e/${excelBaseName}.cy.js`;
+       await window.chathaiAPI.runCypressTest(testFilePath);
+       setLog(`✅ Cypress test run complete for ${selectedFile.name}`);
+     } catch (err) {
+       setLog('❌ Error running test: ' + err);
+     }
+  };
 
   const handleSetDefaultDir = async e => {
     const files = e.target.files;
@@ -121,16 +144,16 @@ export default function GeneratePage() {
         <div className="file-list-container">
           <h4 className="folder-name">{directoryName}</h4> {/* Display actual folder name */}
           <div className="file-list">
-             {templateFiles.length > 0 ? (
-               templateFiles.map((file, index) => (
-                 <div key={index} className="file-item" onClick={() => handleFileClick(file)}>
-                   <span className="filename-placeholder">📄</span> {file.name} {/* Display actual filename and a simple icon */}
-                 </div>
-               ))
-             ) : (
-               <p>No template files found in the default directory.</p>
-             )}
-          </div>
+  {templateFiles.length > 0 ? (
+    templateFiles.map((file, index) => (
+      <div key={index} className="file-item" onClick={() => handleFileClick(file)}>
+        <span className="filename-placeholder">📄</span> {file.name}
+      </div>
+    ))
+    )  : (
+    <p>No template files found in the default directory.</p>
+  )}
+</div>
         </div>
         <div className="button-row">
            <button
@@ -148,11 +171,21 @@ export default function GeneratePage() {
              run all test
            </button>
         </div>
-        <div className="console-placeholder">
-           {/* Placeholder for test results console */}
-           <p>[Console Output Area]</p>
-           <pre className="chathai-log">{log}</pre>
-        </div>
+        <div className="console-output-card">
+        <div className="console-title">Console Output</div>
+        <textarea
+          className="console-textarea"
+          value={log}
+          readOnly
+          rows={6}
+        />
+        <textarea
+          className="console-textarea"
+          value={runLog}
+          readOnly
+          rows={6}
+        />
+      </div>
       </div>
     );
   };
@@ -160,35 +193,46 @@ export default function GeneratePage() {
   const renderSingleFileView = () => (
     <div className="main-content-panel">
       <div className="header-row">
-         <button className="chathai-btn" onClick={() => setCurrentView('all')}>Back to All Files</button>
+        <button className="chathai-btn" onClick={() => setCurrentView('all')}>Back to All Files</button>
       </div>
-      <div className="file-detail-container">
-         {/* Placeholder for file details based on Image 2 */}
-         <div className="file-icon">📄</div> {/* Using a simple file emoji as placeholder */}
-         <h3>{selectedFile?.name || 'No file selected'}</h3>
-         <p>xlsx template v.1.1.1.0</p> {/* Keep as placeholder for now */}
-         <div className="status-indicator success">SUCCESS!</div> {/* Placeholder with success class */}
-      </div>
-       <div className="button-row">
-         <button
-           className="chathai-btn"
-           onClick={handleGenerateSingle}
+      <div className="file-detail-row">
+        <div className="file-detail-container">
+          <div className="file-icon">📄</div>
+          <h3>{selectedFile?.name || 'No file selected'}</h3>
+          <p>xlsx template v.1.1.1.0</p>
+          <div className="status-indicator success">SUCCESS!</div>
+        </div>
+        <div className="button-col">
+          <button
+            className="chathai-btn"
+            onClick={handleGenerateSingle}
             disabled={isGenerating}
-         >
-           generate test
-         </button>
-         <button
-           className="chathai-btn"
-           onClick={handleRunSingleTest}
-           disabled={isGenerating} // Disable while generating
-         >
-           Run your test
-         </button>
+          >
+            GENERATE TEST
+          </button>
+          <button
+            className="chathai-btn"
+            onClick={handleRunSingleTest}
+            disabled={isGenerating}
+          >
+            RUN YOUR TEST
+          </button>
+        </div>
       </div>
-       <div className="console-placeholder">
-         {/* Placeholder for test results console */}
-         <p>[Console Output Area]</p>
-         <pre className="chathai-log">{log}</pre>
+      <div className="console-output-card">
+        <div className="console-title">Console Output</div>
+        <textarea
+          className="console-textarea"
+          value={log}
+          readOnly
+          rows={6}
+        />
+        <textarea
+          className="console-textarea"
+          value={runLog}
+          readOnly
+          rows={6}
+        />
       </div>
     </div>
   );
