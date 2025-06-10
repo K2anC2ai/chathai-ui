@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { exec, spawn } = require('child_process');
 const fs = require('fs');
+const { shell } = require('electron');
 
 function getProjectDirFromArgv() {
   // Find the first argument that looks like an absolute path and is not the exe itself
@@ -221,4 +222,8 @@ ipcMain.handle('run-all-cypress-tests', async (event) => {
       reject(err.message);
     });
   });
+});
+
+ipcMain.handle('open-docs', async () => {
+  await shell.openExternal('https://docs.chathai.site');
 });
