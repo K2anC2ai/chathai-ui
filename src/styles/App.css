@@ -258,3 +258,17 @@ button:focus {
   width: 100%;
   margin: 0;
 }
+
+.test-report-table table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+.test-report-table th, .test-report-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+.test-report-table th {
+  background: #f5a86a;
+  color: #fff;
+}

@@ -348,3 +348,133 @@
   padding: 8px;
   resize: vertical;
 }
+
+/* Modern output-report-row layout */
+.output-report-row {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  margin-top: 18px;
+  width: 100%;
+}
+
+/* Console panel styling */
+.console-panel {
+  flex: 1;
+  background: #23272e;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(30,40,60,0.07);
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 48vw;
+}
+
+.console-panel-header {
+  color: #f5a86a;
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+}
+
+.console-panel-textarea {
+  background: #181b20;
+  color: #e8eaf0;
+  border: none;
+  border-radius: 6px;
+  font-family: 'Fira Mono', 'Consolas', 'Menlo', monospace;
+  font-size: 1em;
+  padding: 10px;
+  margin-bottom: 10px;
+  resize: vertical;
+  min-height: 60px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  outline: none;
+  transition: box-shadow 0.2s;
+}
+.console-panel-textarea:focus {
+  box-shadow: 0 0 0 2px #f5a86a33;
+}
+
+/* Test report panel styling */
+.test-report-panel {
+  flex: 1;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(30,40,60,0.07);
+  padding: 24px 20px;
+  min-width: 0;
+  max-width: 48vw;
+  overflow-x: auto;
+}
+
+.test-report-header {
+  color: #f5a86a;
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+}
+
+.test-report-table-modern {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 1em;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(30,40,60,0.06);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.test-report-table-modern th,
+.test-report-table-modern td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.test-report-table-modern th {
+  background: #f5a86a;
+  color: #fff;
+  font-weight: 600;
+  border: none;
+}
+
+.test-report-table-modern tr:last-child td {
+  border-bottom: none;
+}
+
+.test-report-filename {
+  font-weight: 500;
+  color: #222;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.test-report-pass {
+  color: #2ecc40;
+  font-weight: 600;
+}
+
+.test-report-fail {
+  color: #e74c3c;
+  font-weight: 600;
+}
+
+.test-report-skip {
+  color: #f5a86a;
+  font-weight: 600;
+}
+
+.test-report-error {
+  color: #e74c3c;
+  font-size: 0.97em;
+  max-width: 220px;
+  word-break: break-word;
+}

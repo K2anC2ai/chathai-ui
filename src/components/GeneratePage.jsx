@@ -11,6 +11,7 @@ export default function GeneratePage() {
   const [selectedFile, setSelectedFile] = useState(null); // To store the selected file object
   const [isSidebarVisible, setIsSidebarVisible] = useState(true); // State to control sidebar visibility
   const [runLog, setRunLog] = useState('');
+  const [testReport, setTestReport] = useState([]);
 
   // On mount, fetch the real default template dir and template files
   useEffect(() => {
@@ -60,9 +61,12 @@ export default function GeneratePage() {
   const handleRunAllTests = async () => {
     setLog('Running all Cypress tests...');
     setRunLog('');
+    setTestReport([]); // Clear previous report
     try {
-      await window.chathaiAPI.runAllCypressTests();
+      const output = await window.chathaiAPI.runAllCypressTests();
       setLog('✅ All Cypress tests completed!');
+      setRunLog(output);
+      setTestReport(parseCypressOutput(output));
     } catch (err) {
       setLog('❌ Error running all tests: ' + err);
     }
@@ -132,6 +136,16 @@ export default function GeneratePage() {
     setIsSidebarVisible(!isSidebarVisible);
   };
 
+  const handleExportReport = async () => {
+    setLog('Exporting report...');
+    try {
+      const result = await window.chathaiAPI.exportReport();
+      setLog(result || '✅ Report exported!');
+    } catch (err) {
+      setLog('❌ Error exporting report: ' + err);
+    }
+  };
+
   const renderAllFilesView = () => {
     // Extract directory name from defaultDir
     const directoryName = defaultDir ? defaultDir.split(/[\/\\]/).pop() : 'No folder selected';
@@ -170,22 +184,60 @@ export default function GeneratePage() {
            >
              run all test
            </button>
+           <button
+  className="chathai-btn"
+  onClick={handleExportReport}
+  disabled={isGenerating}
+>
+  Export Report
+</button>
         </div>
-        <div className="console-output-card">
-        <div className="console-title">Console Output</div>
-        <textarea
-          className="console-textarea"
-          value={log}
-          readOnly
-          rows={6}
-        />
-        <textarea
-          className="console-textarea"
-          value={runLog}
-          readOnly
-          rows={6}
-        />
-      </div>
+        <div className="output-report-row">
+  <section className="console-panel">
+    <header className="console-panel-header">Console Output</header>
+    <textarea
+      className="console-panel-textarea"
+      value={log}
+      readOnly
+      rows={8}
+      spellCheck={false}
+    />
+    <textarea
+      className="console-panel-textarea"
+      value={runLog}
+      readOnly
+      rows={12}
+      spellCheck={false}
+    />
+  </section>
+  {testReport.length > 0 && (
+    <section className="test-report-panel">
+      <header className="test-report-header">Test Report</header>
+      <table className="test-report-table-modern">
+        <thead>
+          <tr>
+            <th style={{width: '32%'}}>File</th>
+            <th style={{width: '12%', textAlign: 'center'}}>Passing</th>
+            <th style={{width: '12%', textAlign: 'center'}}>Failing</th>
+            <th style={{width: '12%', textAlign: 'center'}}>Skipped</th>
+            <th style={{width: '32%'}}>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {testReport.map((r, i) => (
+            <tr key={i}>
+              <td className="test-report-filename" title={r.file}>{r.file}</td>
+              <td className="test-report-pass" style={{textAlign: 'center'}}>{r.passing}</td>
+              <td className="test-report-fail" style={{textAlign: 'center'}}>{r.failing}</td>
+              <td className="test-report-skip" style={{textAlign: 'center'}}>{r.skipped}</td>
+              <td className="test-report-error">{r.error}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  )}
+</div>
       </div>
     );
   };
@@ -236,6 +288,34 @@ export default function GeneratePage() {
       </div>
     </div>
   );
+
+  function parseCypressOutput(output) {
+  const report = [];
+  // Find the summary table at the end
+  const summaryRegex = /Spec\s+Tests\s+Passing\s+Failing\s+Pending\s+Skipped\s*\n([\s\S]+?)\n\s*[√×]/;
+  const match = output.match(summaryRegex);
+  if (match) {
+    const lines = match[1].split('\n').map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      // Example line:
+      // │ √  chathai-templateV.1.0.0-copy.cy.js       00:01        2        2        -        -        - │
+      const parts = line.split(/\s{2,}/);
+      if (parts.length >= 8) {
+        const file = parts[1].replace(/^√\s+|×\s+/, '').trim();
+        const passing = parts[4] !== '-' ? Number(parts[4]) : 0;
+        const failing = parts[5] !== '-' ? Number(parts[5]) : 0;
+        const skipped = parts[7] !== '-' ? Number(parts[7]) : 0;
+        // Try to find error message for this file
+        let error = '';
+        const errorRegex = new RegExp(`${file}[\\s\\S]+?CypressError: ([\\s\\S]+?)(\\n\\s*\\n|$)`);
+        const errorMatch = output.match(errorRegex);
+        if (errorMatch) error = errorMatch[1].trim();
+        report.push({ file, passing, failing, skipped, error });
+      }
+    }
+  }
+  return report;
+}
 
   return (
     <div className="chathai-container">

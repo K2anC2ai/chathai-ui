@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('chathaiAPI', {
   runCypressTest: (specPath) => ipcRenderer.invoke('run-cypress-test', specPath),
   onCypressLog: (callback) => ipcRenderer.on('cypress-log', (_, data) => callback(data)),
   runAllCypressTests: () => ipcRenderer.invoke('run-all-cypress-tests'),
-  openDocs: () => ipcRenderer.invoke('open-docs')
+  openDocs: () => ipcRenderer.invoke('open-docs'),
+  exportReport: () => ipcRenderer.invoke('export-report')
 });
