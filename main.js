@@ -4,6 +4,12 @@ const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const { shell } = require('electron');
 
+// Handle Squirrel events (Windows installer) - prevent auto-launch after install
+if (require('electron-squirrel-startup')) {
+  app.quit();
+  process.exit(0);
+}
+
 function getProjectDirFromArgv() {
   // Find the first argument that looks like an absolute path and is not the exe itself
   const exePath = process.execPath.toLowerCase();
