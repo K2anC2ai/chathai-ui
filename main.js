@@ -54,7 +54,7 @@ function createWindow() {
 
 app.whenReady().then(createWindow);
 
-ipcMain.handle('run-chathai', async (event, selectedPath, mode) => {
+ipcMain.handle('run-chathai', async (event, selectedPath, mode, options = {}) => {
   return new Promise((resolve, reject) => {
     let chathaiCli;
     if (app.isPackaged) {
@@ -63,25 +63,32 @@ ipcMain.handle('run-chathai', async (event, selectedPath, mode) => {
       chathaiCli = path.join(__dirname, 'resources', 'Chathai_OnDev', 'bin', 'chathai.js');
     }
     const projectDir = getProjectDirFromArgv();
-    const outputDir = path.join(projectDir, 'cypress', 'e2e');
+    const outputDir = options.outputDir && options.outputDir.trim()
+      ? options.outputDir.trim()
+      : 'cypress/e2e';
+    const ddtEnabled = !!options.ddtEnabled;
+    const fixtureName = (options.fixtureName || '').trim();
     let cliCmd;
     if (mode === 'directory') {
       if (!selectedPath) {
         // No argument: use default template dir
-        cliCmd = `node "${chathaiCli}" generate --project-dir "${projectDir}" --output-dir "cypress/e2e"`;
+        cliCmd = `node "${chathaiCli}" generate --project-dir "${projectDir}" --output-dir "${outputDir}"`;
       } else {
         // Use only the directory name (relative to projectDir)
         const dirName = path.isAbsolute(selectedPath)
           ? path.relative(projectDir, selectedPath)
           : selectedPath;
-        cliCmd = `node "${chathaiCli}" generate "${dirName}" --project-dir "${projectDir}" --output-dir "cypress/e2e"`;
+        cliCmd = `node "${chathaiCli}" generate "${dirName}" --project-dir "${projectDir}" --output-dir "${outputDir}"`;
       }
     } else {
       // Single file mode
       const resolvedExcelPath = path.isAbsolute(selectedPath)
         ? selectedPath
         : path.join(projectDir, selectedPath);
-      cliCmd = `node "${chathaiCli}" generate "${resolvedExcelPath}" --project-dir "${projectDir}" --output-dir "cypress/e2e"`;
+      cliCmd = `node "${chathaiCli}" generate "${resolvedExcelPath}" --project-dir "${projectDir}" --output-dir "${outputDir}"`;
+    }
+    if (ddtEnabled) {
+      cliCmd += fixtureName ? ` --ddt ${fixtureName}` : ` --ddt`;
     }
     exec(
       cliCmd,
@@ -113,6 +120,52 @@ ipcMain.handle('setDefaultTemplateDir', async (event, templateDir) => {
       }
     );
   });
+});
+
+ipcMain.handle('validate-excel', async (event, excelPath) => {
+  return new Promise((resolve, reject) => {
+    let chathaiCli;
+    if (app.isPackaged) {
+      chathaiCli = path.join(process.resourcesPath, 'Chathai_OnDev', 'bin', 'chathai.js');
+    } else {
+      chathaiCli = path.join(__dirname, 'resources', 'Chathai_OnDev', 'bin', 'chathai.js');
+    }
+    const projectDir = getProjectDirFromArgv();
+    const resolvedExcelPath = path.isAbsolute(excelPath) ? excelPath : path.join(projectDir, excelPath);
+    const cliCmd = `node "${chathaiCli}" --validate "${resolvedExcelPath}"`;
+    exec(cliCmd, { cwd: projectDir }, (error, stdout, stderr) => {
+      if (error) return reject(stderr || error.message);
+      resolve(stdout);
+    });
+  });
+});
+
+ipcMain.handle('create-template', async (event, fileName) => {
+  try {
+    const projectDir = getProjectDirFromArgv();
+    const configPath = path.join(projectDir, '.chathai-config.json');
+    let templateDir = 'xlsxtemplate';
+    if (fs.existsSync(configPath)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (cfg.defaultTemplateDir) templateDir = cfg.defaultTemplateDir;
+      } catch {}
+    }
+    const destDir = path.join(projectDir, templateDir);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+    const defaultTplRelative = path.join('Chathai_OnDev', 'xlsxtemplate', 'chathai-templateV.1.0.0.xlsx');
+    const srcTemplate = app.isPackaged
+      ? path.join(process.resourcesPath, defaultTplRelative)
+      : path.join(__dirname, 'resources', defaultTplRelative);
+
+    const safeName = (fileName && fileName.trim()) ? fileName.trim() : 'my-template.xlsx';
+    const destPath = path.join(destDir, safeName.endsWith('.xlsx') ? safeName : `${safeName}.xlsx`);
+    fs.copyFileSync(srcTemplate, destPath);
+    return `✅ Template created at ${destPath}`;
+  } catch (e) {
+    return Promise.reject(e.message || String(e));
+  }
 });
 
 ipcMain.on('open-installed-app', (event, arg) => {
@@ -224,6 +277,90 @@ ipcMain.handle('run-all-cypress-tests', async (event) => {
   });
 });
 
+// Run tests (all or single spec) and return structured results + screenshot paths
+ipcMain.handle('run-tests-with-report', async (event, specPathOrNull) => {
+  return new Promise((resolve, reject) => {
+    const args = ['cypress', 'run', '--config', 'video=true'];
+    if (specPathOrNull) args.push('--spec', specPathOrNull);
+    const cypress = spawn('npx', args, { cwd: projectDir, shell: true });
+    let output = '';
+    cypress.stdout.on('data', (data) => {
+      output += data.toString();
+      event.sender.send('cypress-log', data.toString());
+    });
+    cypress.stderr.on('data', (data) => {
+      output += data.toString();
+      event.sender.send('cypress-log', data.toString());
+    });
+    cypress.on('close', () => {
+      // Parse specs/tests (reuse logic similar to export-report)
+      const specRegex = /Running:\s+([^\s]+\.cy\.js)[\s\S]+?(?=Running:|^\s*\(Run Finished\))/gm;
+      let match;
+      const specs = [];
+      while ((match = specRegex.exec(output)) !== null) {
+        const specName = match[1].trim();
+        const specBlock = match[0];
+        const tests = [];
+        const symRe = /^\s{4}([√×\-✓✖])\s(.+?)(?:\s+\(([\d.]+m?s)\))?\s*$/gm;
+        let t;
+        while ((t = symRe.exec(specBlock)) !== null) {
+          const [, icon, name, dur] = t;
+          let status = icon === '√' || icon === '✓' ? 'pass' : icon === '×' || icon === '✖' ? 'fail' : 'skip';
+          tests.push({ name: name.trim(), status, duration: dur || '', error: '' });
+        }
+        const numFailRe = /^\s+\d+\)\s(.+?)\s*$/gm;
+        let nf;
+        while ((nf = numFailRe.exec(specBlock)) !== null) {
+          const name = nf[1].trim();
+          if (!tests.find(x => x.name === name)) tests.push({ name, status: 'fail', duration: '', error: '' });
+        }
+        // Hook failures
+        const failRegex = /^\s*\d+\)\s(.+?)\s+"(.+?)" hook for "(.+?)"/gm;
+        let f;
+        while ((f = failRegex.exec(specBlock)) !== null) {
+          const suite = f[1].trim();
+          const hook = f[2].trim();
+          const testName = f[3].trim();
+          tests.push({ name: `${suite} [${hook} hook for "${testName}"]`, status: 'fail', duration: '', error: '' });
+        }
+        specs.push({ specName, tests });
+      }
+      // Find screenshots
+      function findAllScreenshots(dir) {
+        let results = [];
+        if (!fs.existsSync(dir)) return results;
+        for (const file of fs.readdirSync(dir)) {
+          const full = path.join(dir, file);
+          if (fs.statSync(full).isDirectory()) results = results.concat(findAllScreenshots(full));
+          else if (file.endsWith('.png')) results.push(full);
+        }
+        return results;
+      }
+      const screenshotsDir = path.join(projectDir, 'cypress', 'screenshots');
+      const screenshotsAbs = findAllScreenshots(screenshotsDir);
+      const screenshotsRel = screenshotsAbs.map(p => path.relative(projectDir, p).replace(/\\/g, '/'));
+      const screenshotsUris = screenshotsAbs.map(p => 'file://' + p.replace(/\\/g, '/'));
+      // Find videos
+      function findAllVideos(dir) {
+        let results = [];
+        if (!fs.existsSync(dir)) return results;
+        for (const file of fs.readdirSync(dir)) {
+          const full = path.join(dir, file);
+          if (fs.statSync(full).isDirectory()) results = results.concat(findAllVideos(full));
+          else if (file.endsWith('.mp4')) results.push(full);
+        }
+        return results;
+      }
+      const videosDir = path.join(projectDir, 'cypress', 'videos');
+      const videosAbs = findAllVideos(videosDir);
+      const videosRel = videosAbs.map(p => path.relative(projectDir, p).replace(/\\/g, '/'));
+      const videosUris = videosAbs.map(p => 'file://' + p.replace(/\\/g, '/'));
+      resolve({ output, specs, screenshots: screenshotsRel, screenshotUris: screenshotsUris, videos: videosRel, videoUris: videosUris });
+    });
+    cypress.on('error', (err) => reject(err.message));
+  });
+});
+
 ipcMain.handle('open-docs', async () => {
   await shell.openExternal('https://docs.chathai.site');
 });
@@ -253,22 +390,28 @@ ipcMain.handle('export-report', async (event) => {
         const specName = match[1].trim();
         const specBlock = match[0];
         // Find all tests in this spec
-        // 1. Parse normal test lines (passing/skipped)
-        const testRegex = /^\s{4}([√×-])\s(.+)(?:\s+\(([\d.]+m?s)\))?/gm;
+        // 1. Parse normal test lines (passing/skipped) [old format with symbols]
         const tests = [];
+        const testRegex = /^\s{4}([√×\-✓✖])\s(.+?)(?:\s+\(([\d.]+m?s)\))?\s*$/gm;
         let testMatch;
         while ((testMatch = testRegex.exec(specBlock)) !== null) {
           const [, statusIcon, testName, duration] = testMatch;
           let status = 'unknown';
-          if (statusIcon === '√') status = 'pass';
-          else if (statusIcon === '×') status = 'fail';
+          if (statusIcon === '√' || statusIcon === '✓') status = 'pass';
+          else if (statusIcon === '×' || statusIcon === '✖') status = 'fail';
           else if (statusIcon === '-') status = 'skip';
-          tests.push({
-            name: testName.trim(),
-            status,
-            duration: duration || '',
-            error: ''
-          });
+          tests.push({ name: testName.trim(), status, duration: duration || '', error: '' });
+        }
+
+        // 1b. Parse Cypress v15 style numbered failure lines: "  1) Test name"
+        const numberedFailRegex = /^\s+\d+\)\s(.+?)\s*$/gm;
+        let numFail;
+        while ((numFail = numberedFailRegex.exec(specBlock)) !== null) {
+          const testName = numFail[1].trim();
+          // Avoid duplicates if a symbol-based parse already added it
+          if (!tests.find(t => t.name === testName)) {
+            tests.push({ name: testName, status: 'fail', duration: '', error: '' });
+          }
         }
 
         // 2. Parse Mocha-style hook failures (failures in before/after hooks)

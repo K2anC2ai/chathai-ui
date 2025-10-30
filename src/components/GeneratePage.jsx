@@ -12,6 +12,14 @@ export default function GeneratePage() {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true); // State to control sidebar visibility
   const [runLog, setRunLog] = useState('');
   const [testReport, setTestReport] = useState([]);
+  const [screenshots, setScreenshots] = useState([]);
+  const [screenshotUris, setScreenshotUris] = useState([]);
+  const [videos, setVideos] = useState([]);
+  const [videoUris, setVideoUris] = useState([]);
+  const [ddtEnabled, setDdtEnabled] = useState(true);
+  const [fixtureName, setFixtureName] = useState('ecommerce_ddt');
+  const [outputDir, setOutputDir] = useState('cypress/e2e');
+  const [newTemplateName, setNewTemplateName] = useState('my-template.xlsx');
 
   // On mount, fetch the real default template dir and template files
   useEffect(() => {
@@ -28,7 +36,11 @@ export default function GeneratePage() {
   const handleGenerate = async (filePath) => {
     setLog('Generating Cypress tests...');
     try {
-      const result = await window.chathaiAPI.runChathai(filePath, 'file');
+      const result = await window.chathaiAPI.runChathai(filePath, 'file', {
+        ddtEnabled,
+        fixtureName,
+        outputDir
+      });
       setLog(result || '✅ Cypress tests generated!');
     } catch (err) {
       setLog('❌ Error: ' + err);
@@ -47,7 +59,11 @@ export default function GeneratePage() {
     for (const file of templateFiles) {
       try {
         setLog(prev => prev + `\nProcessing ${file.name}...`);
-        const result = await window.chathaiAPI.runChathai(file.path, 'file');
+        const result = await window.chathaiAPI.runChathai(file.path, 'file', {
+          ddtEnabled,
+          fixtureName,
+          outputDir
+        });
         setLog(prev => prev + `\n✅ ${file.name}: ${result || 'Tests generated successfully!'}`);
       } catch (err) {
         setLog(prev => prev + `\n❌ ${file.name}: Error - ${err}`);
@@ -61,12 +77,17 @@ export default function GeneratePage() {
   const handleRunAllTests = async () => {
     setLog('Running all Cypress tests...');
     setRunLog('');
-    setTestReport([]); // Clear previous report
+    setTestReport([]);
+    setScreenshots([]);
     try {
-      const output = await window.chathaiAPI.runAllCypressTests();
+      const res = await window.chathaiAPI.runTestsWithReport(null);
       setLog('✅ All Cypress tests completed!');
-      setRunLog(output);
-      setTestReport(parseCypressOutput(output));
+      setRunLog(res.output);
+      setTestReport(parseCypressOutput(res.output));
+      setScreenshots(res.screenshots || []);
+      setScreenshotUris(res.screenshotUris || []);
+      setVideos(res.videos || []);
+      setVideoUris(res.videoUris || []);
     } catch (err) {
       setLog('❌ Error running all tests: ' + err);
     }
@@ -77,7 +98,11 @@ export default function GeneratePage() {
      setLog(`Generating test for ${selectedFile.name}...`);
      setIsGenerating(true);
      try {
-       const result = await window.chathaiAPI.runChathai(selectedFile.path, 'file');
+       const result = await window.chathaiAPI.runChathai(selectedFile.path, 'file', {
+         ddtEnabled,
+         fixtureName,
+         outputDir
+       });
        setLog(result || `✅ Test generated for ${selectedFile.name}!`);
      } catch (err) {
        setLog('❌ Error generating test: ' + err);
@@ -89,14 +114,18 @@ export default function GeneratePage() {
      if (!selectedFile) return;
      setRunLog('');
      setLog(`Running Cypress test for ${selectedFile.name}...`);
-     try {
-       // Compute the generated test file path
-       // Example: if selectedFile.path is 'testcase/test.xlsx', output is 'cypress/e2e/test.cy.js'
-       const excelBaseName = selectedFile.name.replace(/\.xlsx$/i, '');
-       const testFilePath = `cypress/e2e/${excelBaseName}.cy.js`;
-       await window.chathaiAPI.runCypressTest(testFilePath);
-       setLog(`✅ Cypress test run complete for ${selectedFile.name}`);
-     } catch (err) {
+    try {
+      const excelBaseName = selectedFile.name.replace(/\.xlsx$/i, '');
+      const testFilePath = `cypress/e2e/${excelBaseName}.cy.js`;
+      const res = await window.chathaiAPI.runTestsWithReport(testFilePath);
+      setRunLog(res.output);
+      setTestReport(parseCypressOutput(res.output));
+      setScreenshots(res.screenshots || []);
+      setScreenshotUris(res.screenshotUris || []);
+      setVideos(res.videos || []);
+      setVideoUris(res.videoUris || []);
+      setLog(`✅ Cypress test run complete for ${selectedFile.name}`);
+    } catch (err) {
        setLog('❌ Error running test: ' + err);
      }
   };
@@ -146,6 +175,30 @@ export default function GeneratePage() {
     }
   };
 
+  const handleValidate = async () => {
+    if (!selectedFile) return;
+    setLog(`Validating ${selectedFile.name}...`);
+    try {
+      const out = await window.chathaiAPI.validateExcel(selectedFile.path);
+      setLog(out || '✅ Validation complete');
+    } catch (e) {
+      setLog('❌ Validate error: ' + e);
+    }
+  };
+
+  const handleCreateTemplate = async () => {
+    setLog('Creating template...');
+    try {
+      const out = await window.chathaiAPI.createTemplate(newTemplateName);
+      setLog(out || '✅ Template created');
+      // refresh list
+      const files = await window.chathaiAPI.listTemplateFiles();
+      setTemplateFiles(files);
+    } catch (e) {
+      setLog('❌ Create template error: ' + e);
+    }
+  };
+
   const renderAllFilesView = () => {
     // Extract directory name from defaultDir
     const directoryName = defaultDir ? defaultDir.split(/[\/\\]/).pop() : 'No folder selected';
@@ -170,27 +223,36 @@ export default function GeneratePage() {
 </div>
         </div>
         <div className="button-row">
+           <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+             <label><input type="checkbox" checked={ddtEnabled} onChange={e=>setDdtEnabled(e.target.checked)} /> DDT</label>
+             <input className="chathai-input--sm" placeholder="fixture name" value={fixtureName} onChange={e=>setFixtureName(e.target.value)} />
+             <input className="chathai-input--sm" placeholder="output dir" value={outputDir} onChange={e=>setOutputDir(e.target.value)} style={{minWidth:180}} />
+           </div>
            <button
-             className="chathai-btn"
+             className="chathai-btn chathai-btn--sm"
              onClick={handleGenerateAll}
              disabled={isGenerating}
            >
              {isGenerating ? 'Generating...' : 'generate all'}
            </button>
            <button
-             className="chathai-btn"
+             className="chathai-btn chathai-btn--sm"
              onClick={handleRunAllTests}
              disabled={isGenerating} // Disable while generating
            >
              run all test
            </button>
            <button
-  className="chathai-btn"
+  className="chathai-btn chathai-btn--sm"
   onClick={handleExportReport}
   disabled={isGenerating}
 >
   Export Report
 </button>
+           <div style={{display:'flex',gap:8,alignItems:'center',marginLeft:8}}>
+             <input className="chathai-input--sm" placeholder="new-template.xlsx" value={newTemplateName} onChange={e=>setNewTemplateName(e.target.value)} />
+             <button className="chathai-btn chathai-btn--sm" onClick={handleCreateTemplate} disabled={isGenerating}>create template</button>
+           </div>
         </div>
         <div className="output-report-row">
   <section className="console-panel">
@@ -235,6 +297,32 @@ export default function GeneratePage() {
           ))}
         </tbody>
       </table>
+      {screenshots.length > 0 && (
+        <div style={{marginTop: 12}}>
+          <div style={{fontWeight:600, marginBottom:6}}>Screenshots</div>
+          <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+            {screenshots.map((s,i) => (
+              <div key={i} style={{border:'1px solid #eee', borderRadius:6, padding:6}}>
+                <div style={{fontSize:'0.85em', marginBottom:4, maxWidth:240, overflow:'hidden', textOverflow:'ellipsis'}} title={s}>{s}</div>
+                <img src={screenshotUris[i] || s} alt="screenshot" style={{maxWidth:240, borderRadius:4}} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {videoUris.length > 0 && (
+        <div style={{marginTop: 12}}>
+          <div style={{fontWeight:600, marginBottom:6}}>Videos</div>
+          <div style={{display:'flex', gap:12, flexWrap:'wrap'}}>
+            {videoUris.map((v,i) => (
+              <div key={i} style={{border:'1px solid #eee', borderRadius:6, padding:6, maxWidth:260}}>
+                <div style={{fontSize:'0.85em', marginBottom:4, maxWidth:240, overflow:'hidden', textOverflow:'ellipsis'}} title={videos[i]}>{videos[i]}</div>
+                <video src={v} controls style={{maxWidth:240, borderRadius:4}} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   )}
 </div>
@@ -255,6 +343,11 @@ export default function GeneratePage() {
           <div className="status-indicator success">SUCCESS!</div>
         </div>
         <div className="button-col">
+          <div style={{display:'flex',gap:8,flexDirection:'column',marginBottom:8}}>
+            <label><input type="checkbox" checked={ddtEnabled} onChange={e=>setDdtEnabled(e.target.checked)} /> DDT</label>
+            <input placeholder="fixture name" value={fixtureName} onChange={e=>setFixtureName(e.target.value)} style={{padding:'6px 8px'}} />
+            <input placeholder="output dir" value={outputDir} onChange={e=>setOutputDir(e.target.value)} style={{padding:'6px 8px'}} />
+          </div>
           <button
             className="chathai-btn"
             onClick={handleGenerateSingle}
@@ -268,6 +361,13 @@ export default function GeneratePage() {
             disabled={isGenerating}
           >
             RUN YOUR TEST
+          </button>
+          <button
+            className="chathai-btn"
+            onClick={handleValidate}
+            disabled={isGenerating}
+          >
+            VALIDATE
           </button>
         </div>
       </div>

@@ -90,9 +90,11 @@
 
 .button-row {
   display: flex;
-  gap: 15px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 16px;
   flex: 0 0 auto; /* Do not grow or shrink, size based on content */
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .chathai-btn {
@@ -106,6 +108,32 @@
   text-transform: uppercase;
   font-weight: bold;
   transition: background-color 0.2s ease;
+}
+
+/* Compact button variant for dense toolbars */
+.chathai-btn--sm {
+  padding: 4px 10px;
+  font-size: 0.9em;
+  text-transform: none;
+  font-weight: 600;
+  border-radius: 5px;
+  height: 32px;
+  line-height: 22px;
+}
+
+/* Compact input to match small buttons */
+.chathai-input--sm {
+  height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 5px;
+  background: #fff;
+  font-size: 0.9em;
+  outline: none;
+}
+.chathai-input--sm:focus {
+  border-color: #f5a86a;
+  box-shadow: 0 0 0 2px #f5a86a33;
 }
 
 .chathai-btn:hover {
