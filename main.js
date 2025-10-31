@@ -375,59 +375,89 @@ ipcMain.handle('export-report', async (event) => {
   return new Promise((resolve, reject) => {
     const projectDir = getProjectDirFromArgv();
     const screenshotsDir = path.join(projectDir, 'cypress', 'screenshots');
+    const videosDir = path.join(projectDir, 'cypress', 'videos');
     const htmlReport = path.join(projectDir, 'chathai-report.html');
 
-    const cypress = spawn('npx', ['cypress', 'run', '--spec', 'cypress/e2e/*.cy.js'], {
+    const cypress = spawn('npx', ['cypress', 'run', '--spec', 'cypress/e2e/*.cy.js', '--config', 'video=true'], {
       cwd: projectDir,
       shell: true
     });
 
-    let output = '';
-    cypress.stdout.on('data', data => output += data.toString());
-    cypress.stderr.on('data', data => output += data.toString());
+    let stdout = '';
+    let stderr = '';
+    cypress.stdout.on('data', data => stdout += data.toString());
+    cypress.stderr.on('data', data => stderr += data.toString());
 
     cypress.on('close', () => {
-      // Parse Cypress output for detailed results
-      // 1. Find all spec files
+      const output = stdout + stderr;
+
+      // Helper function to recursively find files
+      function findAllFiles(dir, ext) {
+        let results = [];
+        if (!fs.existsSync(dir)) return results;
+        for (const file of fs.readdirSync(dir)) {
+          const full = path.join(dir, file);
+          if (fs.statSync(full).isDirectory()) {
+            results = results.concat(findAllFiles(full, ext));
+          } else if (file.endsWith(ext)) {
+            results.push(full);
+          }
+        }
+        return results;
+      }
+
+      // Parse summary statistics
+      const summaryMatch = stdout.match(/Tests:\s+(\d+).*?Passing:\s+(\d+).*?Failing:\s+(\d+).*?Pending:\s+(\d+).*?Skipped:\s+(\d+)/s);
+      const totals = {
+        tests: summaryMatch ? parseInt(summaryMatch[1]) || 0 : 0,
+        passing: summaryMatch ? parseInt(summaryMatch[2]) || 0 : 0,
+        failing: summaryMatch ? parseInt(summaryMatch[3]) || 0 : 0,
+        pending: summaryMatch ? parseInt(summaryMatch[4]) || 0 : 0,
+        skipped: summaryMatch ? parseInt(summaryMatch[5]) || 0 : 0
+      };
+
+      // Parse duration
+      const durMatch = stdout.match(/Duration:\s+([^\n]+)/);
+      const duration = durMatch ? durMatch[1].trim() : null;
+
+      // Parse spec files and tests
       const specRegex = /Running:\s+([^\s]+\.cy\.js)[\s\S]+?(?=Running:|^\s*\(Run Finished\))/gm;
       let match;
       const specs = [];
-      while ((match = specRegex.exec(output)) !== null) {
+      while ((match = specRegex.exec(stdout)) !== null) {
         const specName = match[1].trim();
         const specBlock = match[0];
-        // Find all tests in this spec
-        // 1. Parse normal test lines (passing/skipped) [old format with symbols]
         const tests = [];
-        const testRegex = /^\s{4}([√×\-✓✖])\s(.+?)(?:\s+\(([\d.]+m?s)\))?\s*$/gm;
-        let testMatch;
-        while ((testMatch = testRegex.exec(specBlock)) !== null) {
-          const [, statusIcon, testName, duration] = testMatch;
+        
+        // Parse tests with symbols (support both √ and ✓)
+        const symRe = /^\s{4}([√×\-✓✖])\s(.+?)(?:\s+\(([\d.]+m?s)\))?\s*$/gm;
+        let t;
+        while ((t = symRe.exec(specBlock)) !== null) {
+          const [, icon, name, dur] = t;
           let status = 'unknown';
-          if (statusIcon === '√' || statusIcon === '✓') status = 'pass';
-          else if (statusIcon === '×' || statusIcon === '✖') status = 'fail';
-          else if (statusIcon === '-') status = 'skip';
-          tests.push({ name: testName.trim(), status, duration: duration || '', error: '' });
+          if (icon === '√' || icon === '✓') status = 'pass';
+          else if (icon === '×' || icon === '✖') status = 'fail';
+          else if (icon === '-') status = 'skip';
+          tests.push({ name: name.trim(), status, duration: dur || '' });
         }
 
-        // 1b. Parse Cypress v15 style numbered failure lines: "  1) Test name"
-        const numberedFailRegex = /^\s+\d+\)\s(.+?)\s*$/gm;
-        let numFail;
-        while ((numFail = numberedFailRegex.exec(specBlock)) !== null) {
-          const testName = numFail[1].trim();
-          // Avoid duplicates if a symbol-based parse already added it
-          if (!tests.find(t => t.name === testName)) {
-            tests.push({ name: testName, status: 'fail', duration: '', error: '' });
+        // Parse numbered failures
+        const numFailRe = /^\s+\d+\)\s(.+?)\s*$/gm;
+        let nf;
+        while ((nf = numFailRe.exec(specBlock)) !== null) {
+          const name = nf[1].trim();
+          if (!tests.find(x => x.name === name)) {
+            tests.push({ name, status: 'fail', duration: '' });
           }
         }
 
-        // 2. Parse Mocha-style hook failures (failures in before/after hooks)
+        // Parse Mocha-style hook failures
         const failRegex = /^\s*\d+\)\s(.+?)\s+"(.+?)" hook for "(.+?)"/gm;
         let failMatch;
         while ((failMatch = failRegex.exec(specBlock)) !== null) {
           const suite = failMatch[1].trim();
           const hook = failMatch[2].trim();
           const testName = failMatch[3].trim();
-          // Try to find error message after this line
           const errorMsgRegex = new RegExp(`"${hook}" hook for "${testName}":\\s*([\\s\\S]+?)(?=\\n\\s*\\d+\\)|\\n\\s*\\n|$)`);
           const errorMsgMatch = specBlock.match(errorMsgRegex);
           const error = errorMsgMatch ? errorMsgMatch[1].trim().split('\n')[0] : '';
@@ -438,128 +468,147 @@ ipcMain.handle('export-report', async (event) => {
             error
           });
         }
+
         specs.push({ specName, tests });
       }
 
-      // Recursively find all PNG screenshots
-      function findAllScreenshots(dir) {
-        let results = [];
-        if (!fs.existsSync(dir)) return results;
-        for (const file of fs.readdirSync(dir)) {
-          const full = path.join(dir, file);
-          if (fs.statSync(full).isDirectory()) {
-            results = results.concat(findAllScreenshots(full));
-          } else if (file.endsWith('.png')) {
-            results.push(full);
-          }
-        }
-        return results;
+      // Find screenshots and videos
+      const screenshots = findAllFiles(screenshotsDir, '.png');
+      const videos = findAllFiles(videosDir, '.mp4');
+
+      // Prepare relative paths for media
+      const screenshotPaths = screenshots.map(s => {
+        const relPath = path.relative(projectDir, s).replace(/\\/g, '/');
+        return { path: relPath, name: path.basename(s) };
+      });
+
+      const videoPaths = videos.map(v => {
+        const relPath = path.relative(projectDir, v).replace(/\\/g, '/');
+        return { path: relPath, name: path.basename(v) };
+      });
+
+      // Helper to escape HTML
+      function escapeHtml(text) {
+        return String(text)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
       }
-      const screenshots = findAllScreenshots(screenshotsDir);
 
       // Build HTML report
-      let html = `
-      <html>
-      <head>
-        <title>Chathai Test Report</title>
-        <style>
-          body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f8; color: #222; margin: 0; padding: 0; }
-          .report-container { max-width: 900px; margin: 32px auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(30,40,60,0.07); padding: 32px; }
-          .spec-block { margin-bottom: 32px; border-bottom: 1px solid #eee; padding-bottom: 24px; }
-          .spec-title { font-size: 1.3em; font-weight: 600; margin-bottom: 12px; color: #f5a86a; }
-          .test-row { display: flex; align-items: flex-start; margin-bottom: 18px; }
-          .test-status { font-size: 1.4em; width: 32px; text-align: center; }
-          .test-name { font-weight: 500; flex: 1; }
-          .test-duration { color: #888; font-size: 0.95em; margin-left: 12px; }
-          .test-error { color: #e74c3c; margin-top: 4px; font-size: 0.97em; }
-          .test-screenshot { margin-top: 6px; }
-          .test-screenshot img { max-width: 340px; border-radius: 6px; border: 1px solid #eee; box-shadow: 0 1px 4px rgba(0,0,0,0.06);}
-          .test-pass { color: #2ecc40; }
-          .test-fail { color: #e74c3c; }
-          .test-skip { color: #f5a86a; }
-        </style>
-      </head>
-      <body>
-        <div class="report-container">
-          <h1>Chathai Test Report</h1>
-      `;
-
-      if (specs.length === 0) {
-        html += '<div>No test results found.</div>';
-      } else {
-        for (const spec of specs) {
-          html += `<div class="spec-block"><div class="spec-title">${spec.specName}</div>`;
-          if (spec.tests.length === 0) {
-            html += '<div>No tests found in this spec.</div>';
-          } else {
-            for (const test of spec.tests) {
-              let statusIcon = '';
-              let statusClass = '';
-              if (test.status === 'pass') { statusIcon = '✔️'; statusClass = 'test-pass'; }
-              else if (test.status === 'fail') { statusIcon = '❌'; statusClass = 'test-fail'; }
-              else if (test.status === 'skip') { statusIcon = '⏭️'; statusClass = 'test-skip'; }
-              else { statusIcon = '❓'; statusClass = ''; }
-
-              // Try to find screenshot for failed test
-              let screenshotHtml = '';
-              if (test.status === 'fail') {
-                let screenshot = null;
-                const hookMatch = test.name.match(/^(.*?) \[(.*?) hook for "(.*?)"\]$/);
-                if (hookMatch) {
-                  // Use the original (not normalized) names with spaces
-                  const suite = hookMatch[1];
-                  const hook = hookMatch[2];
-                  const testCase = hookMatch[3];
-                  screenshot = screenshots.find(s => {
-                    const fname = path.basename(s).toLowerCase();
-                    return fname.includes(suite.toLowerCase())
-                      && fname.includes(testCase.toLowerCase())
-                      && fname.includes(`${hook.toLowerCase()} hook`)
-                      && fname.includes('failed');
-                  });
-                  if (!screenshot) {
-                    screenshot = screenshots.find(s => {
-                      const fname = path.basename(s).toLowerCase();
-                      return fname.includes(testCase.toLowerCase())
-                        && fname.includes(`${hook.toLowerCase()} hook`)
-                        && fname.includes('failed');
-                    });
-                  }
-                } else {
-                  // Normal test failure
-                  screenshot = screenshots.find(s => {
-                    const fname = path.basename(s).toLowerCase();
-                    return fname.includes(test.name.toLowerCase());
-                  });
-                }
-                if (screenshot) {
-                  const relPath = path.relative(projectDir, screenshot).replace(/\\/g, '/');
-                  screenshotHtml = `<div class="test-screenshot"><img src="${relPath}" alt="screenshot"/></div>`;
-                }
-              }
-
-              html += `
-                <div class="test-row">
-                  <div class="test-status ${statusClass}">${statusIcon}</div>
-                  <div class="test-name">
-                    ${test.name}
-                    ${test.duration ? `<span class="test-duration">${test.duration}</span>` : ''}
-                    ${test.status === 'fail' && test.error ? `<div class="test-error">${test.error}</div>` : ''}
-                    ${screenshotHtml}
-                  </div>
-                </div>
-              `;
-            }
-          }
-          html += `</div>`;
-        }
-      }
-
-      html += `
+      let html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chathai Test Report</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6f8; color: #222; margin: 0; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(30,40,60,0.07); padding: 32px; }
+    h1 { color: #f5a86a; margin-bottom: 24px; }
+    .summary { display: flex; gap: 20px; margin-bottom: 32px; flex-wrap: wrap; }
+    .summary-card { flex: 1; min-width: 150px; background: #f8f9fa; padding: 16px; border-radius: 8px; text-align: center; }
+    .summary-card h3 { margin: 0 0 8px 0; font-size: 0.9em; color: #666; }
+    .summary-card .value { font-size: 2em; font-weight: bold; }
+    .summary-card.passing .value { color: #2ecc40; }
+    .summary-card.failing .value { color: #e74c3c; }
+    .summary-card.skipped .value { color: #f5a86a; }
+    .spec-block { margin-bottom: 32px; border-bottom: 1px solid #eee; padding-bottom: 24px; }
+    .spec-title { font-size: 1.3em; font-weight: 600; margin-bottom: 12px; color: #f5a86a; }
+    .test-row { display: flex; align-items: flex-start; margin-bottom: 18px; }
+    .test-status { font-size: 1.4em; width: 32px; text-align: center; }
+    .test-name { font-weight: 500; flex: 1; }
+    .test-pass { color: #2ecc40; }
+    .test-fail { color: #e74c3c; }
+    .test-skip { color: #f5a86a; }
+    .section { margin-top: 32px; }
+    .section h2 { color: #f5a86a; margin-bottom: 16px; }
+    .media-grid { display: flex; gap: 16px; flex-wrap: wrap; }
+    .media-item { border: 1px solid #eee; border-radius: 6px; padding: 8px; max-width: 300px; }
+    .media-item img, .media-item video { max-width: 100%; border-radius: 4px; }
+    .media-item .name { font-size: 0.85em; margin-top: 8px; word-break: break-all; }
+    pre { background:#23272e; color:#e8eaf0; padding:16px; border-radius:6px; overflow:auto; max-height:400px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Chathai Test Report</h1>
+    <div class="summary">
+      <div class="summary-card">
+        <h3>Total Tests</h3>
+        <div class="value">${totals.tests}</div>
+      </div>
+      <div class="summary-card passing">
+        <h3>Passing</h3>
+        <div class="value">${totals.passing}</div>
+      </div>
+      <div class="summary-card failing">
+        <h3>Failing</h3>
+        <div class="value">${totals.failing}</div>
+      </div>
+      <div class="summary-card skipped">
+        <h3>Skipped</h3>
+        <div class="value">${totals.skipped}</div>
+      </div>
+      ${duration ? `<div class="summary-card"><h3>Duration</h3><div class="value" style="font-size:1.2em;">${duration}</div></div>` : ''}
+    </div>
+    
+    ${specs.length === 0 ? '<div>No test results found.</div>' : specs.map(spec => `
+      <div class="spec-block">
+        <div class="spec-title">${spec.specName}</div>
+        ${spec.tests.length > 0 ? spec.tests.map(test => {
+          const icon = test.status === 'pass' ? '✔️' : test.status === 'fail' ? '❌' : '⏭️';
+          const statusClass = test.status === 'pass' ? 'test-pass' : test.status === 'fail' ? 'test-fail' : 'test-skip';
+          return `
+            <div class="test-row">
+              <div class="test-status ${statusClass}">${icon}</div>
+              <div class="test-name">
+                ${test.name}
+                ${test.duration ? `<span style="color:#888; font-size:0.9em; margin-left:12px;">${test.duration}</span>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('') : '<div>No tests found in this spec.</div>'}
+      </div>
+    `).join('')}
+    
+    ${screenshotPaths.length > 0 ? `
+      <div class="section">
+        <h2>Screenshots (${screenshotPaths.length})</h2>
+        <div class="media-grid">
+          ${screenshotPaths.map(s => `
+            <div class="media-item">
+              <img src="${s.path}" alt="${s.name}" />
+              <div class="name">${s.name}</div>
+            </div>
+          `).join('')}
         </div>
-      </body>
-      </html>
-      `;
+      </div>
+    ` : ''}
+    
+    ${videoPaths.length > 0 ? `
+      <div class="section">
+        <h2>Videos (${videoPaths.length})</h2>
+        <div class="media-grid">
+          ${videoPaths.map(v => `
+            <div class="media-item">
+              <video src="${v.path}" controls style="max-width:100%;"></video>
+              <div class="name">${v.name}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+    
+    <div class="section">
+      <h2>Console Output</h2>
+      <pre>${escapeHtml(stdout + '\n\n=== STDERR ===\n\n' + stderr)}</pre>
+    </div>
+  </div>
+</body>
+</html>`;
+      
       fs.writeFileSync(htmlReport, html, 'utf-8');
       resolve('✅ Report generated: chathai-report.html');
     });
